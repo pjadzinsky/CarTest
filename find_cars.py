@@ -13,171 +13,6 @@ import os.path as path
 import cPickle
 import pdb
 
-def get_background(file_path):
-    #pdb.set_trace()
-
-    # Create the capture object
-    vc = cv2.VideoCapture(file_path)    #vc: Video Capture
-
-    print('file has {0} frames in total'.format(vc.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT)))
-    print('movie is recorded at {0} FPS'.format(vc.get(cv2.cv.CV_CAP_PROP_FPS)))
-    
-    # create background Subtractor object
-    #bs = cv2.BackgroundSubtractorMOG()
-    bs = cv2.BackgroundSubtractorMOG(10, 3, .5)
-
-    #print('There are {0} frames in the clip'.format(vc.get(CV_CAP_PROP_FRAME_COUNT)))
-
-    while 1:
-        # Read images from vc and add them to bs
-        retval, frame = vc.read()
-
-        fgmask = bs.apply(frame)
-
-        cv2.imshow('frame', fgmask)
-        k = cv2.waitKey(1) & 0xff
-        if k == 27:
-            break
-
-    vc.release()
-    cv2.destroyAllWindows()
-    return bs
-
-
-def find_cars(file_path, output_path):
-    # Create the capture object
-    vc = cv2.VideoCapture(file_path)    #vc: Video Capture
-
-    framesN = int(vc.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
-    FPS = np.round(vc.get(cv2.cv.CV_CAP_PROP_FPS))
-    print('file has {0} frames in total'.format(framesN))
-    print('movie is recorded at {0} FPS'.format(FPS))
-    
-    # create background Subtractor object
-    history = 100
-    bs = cv2.BackgroundSubtractorMOG()
-    #bs = cv2.BackgroundSubtractorMOG(3,history,.1)
-    #bs = cv2.BackgroundSubtractorMOG2(history = history, varThreshold=25, bShadowDetection=False)
-    #bs = cv2.BackgroundSubtractorMOG2()
-    #bs = cv2.BackgroundSubtractorMOG(10, 3, .5)
-
-    #print('There are {0} frames in the clip'.format(vc.get(CV_CAP_PROP_FRAME_COUNT)))
-
-    #left_mask = np.array([[0,0],[350,0],[0,450],[0,0]])
-    right_mask = np.array([[800,0],[1280,0],[1280,450],[800,0]])
-
-    #vc.set(cv2.cv.CV_CAP_PROP_POS_FRAMES,321)
-
-    min_rect_size=25
-    next_image = 0
-    frame_step = int(FPS/60)  # I want 10 frames per second. If movie at 60Hz then process one out of 6 frames
-
-    #pdb.set_trace()
-    for i in range(0, framesN):
-    #for i in range(0, 110, 1):
-        # skip to the desired frame. This is crashing. I'm implementing a different solution
-        # vc.set(cv2.cv.CV_CAP_PROP_POS_FRAMES,int(i))
-        
-        #pdb.set_trace()
-        # Read images from vc and add them to bs
-        retval, frame = vc.read()
-        
-        # this is silly but vc.set is crashing. I'm reading all frames and skipping computation during most
-        #if not i%frame_step==0:
-        #    continue
-
-        #pdb.set_trace()
-
-        # smooth frame before computing background and forground
-        #newframe = erode_dilate(frame, 10)
-        #newframe = cv2.medianBlur(frame, 5)
-        newframe = frame
-
-        # update background model and compute forground
-        fgmask = bs.apply(newframe, learningRate=1.0/history)        # fgmask is binary
-
-        # initially don't do anything else until we have a decent background model
-        if i/frame_step < history/2:
-            continue
-
-
-        '''
-        #pdb.set_trace()
-
-        # a big more smoothing on mask
-        fgmask = erode_dilate(fgmask,50)
-
-        # paint pixels to black outside ROI in fgmask
-        #cv2.fillConvexPoly(fgmask, left_mask, 0)
-        cv2.fillConvexPoly(fgmask, right_mask, 0)
-
-        # compute contours
-        '''
-        #pdb.set_trace()
-        #contours, hierarchy = cv2.findContours(fgmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours, hierarchy = cv2.findContours(fgmask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        '''
-        # change contours to convexHull
-        contours = [cv2.convexHull(contour) for contour in contours]
-
-        # keep contours that are not classified as lines
-        notLineContours = [cnt for cnt in contours if not isline(cnt)]
-
-        # limit rectangles to those that are not lines
-        rectangles = [cv2.boundingRect(contour) for contour in contours if not isline(contour)]
-
-        # merge rectangles that overlap
-        if rectangles:
-            rectangles = merge_rectangles(rectangles)
-
-        # delete rectangles below min_rect_size
-        rectangles = [rect for rect in rectangles if rect[2] > min_rect_size and rect[3]>min_rect_size]
-
-        # squared rectangles
-        rectangles = [squared_rectangle(rect) for rect in rectangles]
-
-        """
-        # if newContours overlap with trackedContours join them, otherwise, add them to trackedContours
-        for new in newContours:
-            # if new overlaps any trackedContours, join them
-            for tracked in trackedContours:
-                pass
-
-            # if execution gets here is because "new" contour was not joined with any of the already tracked ones.
-            trackedContours.add
-        """
-        #cv2.drawContours(frame, trackedContours, -1, (0,255,0), 3)
-
-        #cv2.drawContours(frame, lineContours, -1, (255,0,0), 3)
-
-        # save each box to output_path
-        for l,b,w,h in rectangles:
-            #cPickle.dump((frame[b:b+h, l:l+w, :], -1), fid, protocol=cPickle.HIGHEST_PROTOCOL)
-
-            #cv2.imwrite(path.join(path.join(output_path, "img_{0}.png".format(str(next_image).zfill(6)))), frame[b:b+h, l:l+w, :])
-            next_image += 1
-
-
-        drawRectangles(frame, rectangles, (255,0,0), thickness=3)
-        '''
-
-        cv2.rectangle(frame, (0,0), (300,60), cv2.cv.RGB(0,0,0), thickness=-1)
-        cv2.putText(frame, 'Frame: {0}'.format(i), (10,30), cv2.FONT_HERSHEY_PLAIN, 2.0, cv2.cv.RGB(255,0,0), 2)
-        cv2.rectangle(fgmask, (0,0), (300,60), cv2.cv.RGB(0,0,0), thickness=-1)
-        cv2.putText(fgmask, 'Frame: {0}'.format(i), (10,30), cv2.FONT_HERSHEY_PLAIN, 2.0, 255, 2)
-        cv2.imshow('ori',frame)
-        cv2.imshow('fg', fgmask)
-        #cv2.putText(frame, 'count #: {0}'.format(len(rectangles)), (10,50), cv2.FONT_HERSHEY_PLAIN, 1.0, cv2.cv.RGB(255,255,255), 1)
-
-        #cv2.imshow('frame', frame)
-        k = cv2.waitKey(1) & 0xff
-        if k == 27:
-            break
-
-    vc.release()
-    cv2.destroyAllWindows()
-    return bs
-
 
 def movie_to_train_images(file_path, pkl_file, display_flag=0):
     '''
@@ -255,36 +90,53 @@ def movie_to_train_images(file_path, pkl_file, display_flag=0):
     fid.close()
 
 def find_cars():
-    file_path = 'VID00057.MP4'
-
-    pdb.set_trace()
     # Create the capture object
+    file_path = 'VID00057.MP4'
     vc = cv2.VideoCapture(file_path)    #vc: Video Capture
+
+    framesN = int(vc.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
+    FPS = np.round(vc.get(cv2.cv.CV_CAP_PROP_FPS))
+    print('file has {0} frames in total'.format(framesN))
+    print('movie is recorded at {0} FPS'.format(FPS))
+    
+    frame_step = int(FPS/60)  # I want 10 frames per second. If movie at 60Hz then process one out of 6 frames
+    history = 200
+
+    min_area=900
 
     # create background Subtractor object
     #bs = cv2.BackgroundSubtractorMOG()
     bs = cv2.BackgroundSubtractorMOG2()
 
-    aa, bb = vc.read()
-
-    history = 100
     for i in range(1000):
         # Read images from vc and add them to bs
         retval, frame = vc.read()
 
+        if not i%frame_step==0:
+            continue
+        
         fgmask = bs.apply(frame, learningRate = 1.0/history)        # fgmask is binary
-        fgmaskOri = fgmask.copy()
-        #fgmask = erode_dilate(fgmask, 300)
+
+        # initially don't do anything else until we have a decent background model
+        if i/frame_step < history/2:
+            continue
+
         fgmask = cv2.medianBlur(fgmask, 15)
         
         retval, fgmask = cv2.threshold(fgmask, 10, 255, cv2.THRESH_BINARY)
         contours, hierarchy = cv2.findContours(fgmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        cv2.imshow('frame', frame)
-        cv2.imshow('fgmask', fgmask)
-        cv2.imshow('fgmaskork', fgmaskOri)
+        # convert contours to bounding boxes if area > min_area and they don't look like lines
+        boxes = [squared_rectangle(cv2.boundingRect(cnt)) for cnt in contours if cv2.contourArea(cnt)>min_area and not isline(cnt)]
+        
+        cv2.rectangle(frame, (0,0), (300,60), cv2.cv.RGB(0,0,0), thickness=-1)
+        cv2.putText(frame, 'Frame: {0}'.format(i), (10,30), cv2.FONT_HERSHEY_PLAIN, 2.0, cv2.cv.RGB(255,0,0), 2)
         cv2.drawContours(frame, contours, -1, (0,255,0), 3)
-        cv2.imshow('contours', frame)
+        drawRectangles(frame, boxes, (255,255,0), thickness=2)
+        cv2.imshow('frame', frame)
+        #cv2.imshow('fgmask', fgmask)
+        #cv2.imshow('fgmaskork', fgmaskOri)
+        #cv2.imshow('contours', frame)
 
         k = cv2.waitKey(1) & 0xff
         if k == 27:
